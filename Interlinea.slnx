@@ -4,5 +4,6 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="tests/Domain.UnitTests/Domain.UnitTests.csproj" Type="C#" />
+    <Project Path="tests/Tests.Common/Tests.Common.csproj" Type="C#" />
   </Folder>
 </Solution>
