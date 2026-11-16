@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/Source/">
+    <Project Path="src/Domain/Domain.csproj" Type="C#" />
+  </Folder>
+</Solution>
