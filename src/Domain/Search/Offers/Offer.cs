@@ -82,9 +82,9 @@ public sealed record Offer
     public Money TicketsPrice => Money.Sum(Tickets.Select(t => t.Selected.Price));
 
     /// <summary>
-    /// The total price of the ancillary costs
+    /// The total price of the ancillary costs, zero when there are none.
     /// </summary>
-    public Money AncillaryTotal => Money.Sum(AncillaryCosts.Select(c => c.Amount));
+    public Money AncillaryTotal => Money.Sum(AncillaryCosts.Select(c => c.Amount), Currency);
 
     /// <summary>
     /// The total cost of the travel

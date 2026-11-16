@@ -2,4 +2,7 @@
   <Folder Name="/Source/">
     <Project Path="src/Domain/Domain.csproj" Type="C#" />
   </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="tests/Domain.UnitTests/Domain.UnitTests.csproj" Type="C#" />
+  </Folder>
 </Solution>

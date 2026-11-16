@@ -42,6 +42,22 @@ public readonly record struct Money(decimal Amount, string Currency) : IComparab
     }
 
     /// <summary>
+    /// Sums a collection of Money values in a stated currency.
+    /// Unlike <see cref="Sum(IEnumerable{Money})"/>, an empty collection is a valid input.
+    /// </summary>
+    /// <param name="items">The collection of Money values to sum, possibly empty.</param>
+    /// <param name="currency">The ISO 4217 currency the total is expressed in.</param>
+    /// <returns>The total, zero in <paramref name="currency"/> when there is nothing to sum.</returns>
+    /// <exception cref="InvalidOperationException">An item is not in <paramref name="currency"/>.</exception>
+    public static Money Sum(IEnumerable<Money> items, string currency)
+    {
+        Money total = new(0m, currency);
+        foreach (Money item in items)
+            total += item;
+        return total;
+    }
+
+    /// <summary>
     /// Compares this Money instance with another, ensuring they have the same currency.
     /// </summary>
     /// <param name="other">The other Money instance to compare with.</param>
@@ -82,5 +98,5 @@ public readonly record struct Money(decimal Amount, string Currency) : IComparab
     public static bool operator >=(Money left, Money right) => left.CompareTo(right) >= 0;
     #endregion
 
-    public override string ToString() => $"{Amount:0.##} {Currency}";
+    public override string ToString() => string.Create(CultureInfo.InvariantCulture, $"{Amount:0.##} {Currency}");
 }
