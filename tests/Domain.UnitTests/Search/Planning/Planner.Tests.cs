@@ -12,8 +12,11 @@ public sealed class PlannerTests
     private static readonly DateTimeOffset Yesterday = Now.AddDays(-1);
     private static ExchangeRates Rates => new([("EUR", "USD", 1.10m)]);
 
-    private static Planner NewPlanner() => new(
-        Flights.Airports, Flights.Policy, new ProbePolicy(2000, 4000), TimeSpan.FromDays(30), Rates, Pivot);
+    private static Planner NewPlanner(ProbePolicy? probes = null) => new(
+        Flights.Airports, Flights.Policy, probes ?? new ProbePolicy(2000, 4000), TimeSpan.FromDays(30), Rates, Pivot);
+
+    private static (Route Leg, TripType Type)[] Probed(IEnumerable<PriceQuery> queries) =>
+        [.. queries.Select(query => (query.Route, query.TripType))];
 
     private static SearchRequest Request(string currency, params string[] origins) => new(
         origins.Select(origin => new AirportCode(origin)).ToHashSet(),
@@ -181,5 +184,102 @@ public sealed class PlannerTests
 
         // Assert
         selection.Should().NotThrow();
+    }
+
+    // —————————————————————— PROBE MODE TESTS ——————————————————————
+
+    [Fact]
+    public void ProbeQueries_WithBothLegsAboveTheRoundTripThreshold_ProbesARoundTripOnEachSide()
+    {
+        // Arrange & Act
+        // CDG-YUL is 5523 km and YUL-LIM 6402 km, both above 4000, so each side is probed as a round trip.
+        // This is the partition the old hub enum could not say.
+        IReadOnlyList<PriceQuery> probes = NewPlanner().ProbeQueries(Request(Pivot, "CDG"), new AirportCode("YUL"));
+
+        // Assert
+        // The routes, not only the count: a mode applied to the wrong side, or a leg probed in the wrong direction, leaves the count untouched.
+        (Route, TripType)[] expected =
+        [
+            (new Route("CDG", "YUL"), TripType.RoundTrip),
+            (new Route("YUL", "LIM"), TripType.RoundTrip),
+        ];
+        Probed(probes).Should().BeEquivalentTo(expected);
+    }
+
+    [Fact]
+    public void ProbeQueries_WithAShortHaulFeederAndALongHaul_ProbesOneWaysOnTheFeederAndARoundTripOnTheLongHaul()
+    {
+        // Arrange & Act
+        // CDG-MAD is 1054 km, below 2000 and MAD-LIM is 9526 km, above 4000.
+        IReadOnlyList<PriceQuery> probes = NewPlanner().ProbeQueries(Request(Pivot, "CDG"), new AirportCode("MAD"));
+
+        // Assert
+        (Route, TripType)[] expected =
+        [
+            (new Route("CDG", "MAD"), TripType.OneWay),
+            (new Route("MAD", "CDG"), TripType.OneWay),
+            (new Route("MAD", "LIM"), TripType.RoundTrip),
+        ];
+        Probed(probes).Should().BeEquivalentTo(expected);
+    }
+
+    [Fact]
+    public void ProbeQueries_SearchesEachLegOnItsOwnDateWindow()
+    {
+        // Arrange
+        // The request leaves between the 1st and the 3rd, returns between the 20th and the 22nd.
+        IReadOnlyList<PriceQuery> probes = NewPlanner().ProbeQueries(Request(Pivot, "CDG"), new AirportCode("MAD"));
+
+        // Act
+        PriceQuery toHub = probes.Single(query => query.Route == new Route("CDG", "MAD"));
+        PriceQuery fromHub = probes.Single(query => query.Route == new Route("MAD", "CDG"));
+        PriceQuery longHaul = probes.Single(query => query.Route == new Route("MAD", "LIM"));
+
+        // Assert
+        // The back leg searches the RETURN dates, never the outbound ones.
+        // The leg beyond the hub is extended by the one day a self-transfer may spill over.
+        toHub.Departure.Should().Be(new DateRange(new DateOnly(2026, 12, 1), new DateOnly(2026, 12, 3)));
+        fromHub.Departure.Should().Be(new DateRange(new DateOnly(2026, 12, 20), new DateOnly(2026, 12, 23)));
+        longHaul.Departure.Should().Be(new DateRange(new DateOnly(2026, 12, 1), new DateOnly(2026, 12, 4)));
+        longHaul.Return.Should().Be(new DateRange(new DateOnly(2026, 12, 20), new DateOnly(2026, 12, 22)));
+    }
+
+    [Fact]
+    public void ProbeQueries_WithALegBetweenTheTwoThresholds_ProbesThatSideInBothModes()
+    {
+        // Arrange
+        // Thresholds moved so that CDG-MAD (1054 km) falls between them.
+        // This is the branch of the policy that neither case above reaches, and the one the whole one-way versus round-trip distinction rests on: the same side comes back priced both ways.
+        IReadOnlyList<PriceQuery> probes = NewPlanner(new ProbePolicy(500, 2000))
+            .ProbeQueries(Request(Pivot, "CDG"), new AirportCode("MAD"));
+
+        // Assert
+        (Route, TripType)[] expected =
+        [
+            (new Route("CDG", "MAD"), TripType.OneWay),
+            (new Route("MAD", "CDG"), TripType.OneWay),
+            (new Route("CDG", "MAD"), TripType.RoundTrip),
+            (new Route("MAD", "LIM"), TripType.RoundTrip),
+        ];
+        Probed(probes).Should().BeEquivalentTo(expected);
+    }
+
+    [Fact]
+    public void ProbeQueries_WithOriginsAtVeryDifferentDistances_ChoosesTheModesOnTheLongestLeg()
+    {
+        // Arrange
+        // Paris and Montreal as alternative departures, Madrid as the hub: 1054 km against about 5600.
+        // One mode is picked for the whole side, from the LONGEST leg, so the side is probed as a round trip.
+        IReadOnlyList<PriceQuery> probes = NewPlanner()
+            .ProbeQueries(Request(Pivot, "CDG", "YUL"), new AirportCode("MAD"));
+
+        // Assert
+        (Route, TripType)[] expected =
+        [
+            (new Route("CDG", "MAD"), TripType.RoundTrip),
+            (new Route("YUL", "MAD"), TripType.RoundTrip),
+            (new Route("MAD", "LIM"), TripType.RoundTrip),
+        ];
+        Probed(probes).Should().BeEquivalentTo(expected);
     }
 }
