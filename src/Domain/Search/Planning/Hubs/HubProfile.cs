@@ -3,15 +3,15 @@ using Domain.Search.Planning.Partitions;
 namespace Domain.Search.Planning.Hubs;
 
 /// <summary>
-/// The knowing from an observed hub for an O&D couple.
+/// The knowing from an observed hub for an O&amp;D couple.
 /// Must be conserved 30 days.
 /// </summary>
-/// <param name="Hub">The observed hub</param>
-/// <param name="Origins">The origin city(ies)</param>
-/// <param name="Destination">The destination</param>
-/// <param name="OriginSide">The measures from the origin side</param>
-/// <param name="DestinationSide">The measures from the destination side</param>
-/// <param name="ProbedAt">The date of the observation</param>
+/// <remarks>
+/// A profile outlives the search that produced it, and the next search may ask for another
+/// currency. Its floors are therefore held in a single pivot currency, and
+/// <see cref="Candidates(ExchangeRates, string)"/> is the only way to read them: it converts,
+/// so no caller can compare a cached floor against a price in a currency it was not measured in.
+/// </remarks>
 public sealed record HubProfile
 {
     private readonly LegProfile _originSide;
@@ -27,6 +27,19 @@ public sealed record HubProfile
     /// </summary>
     public string OriginCities { get; }
 
+    /// <summary>
+    /// The pivot currency the measured floors are held in,
+    /// or <see langword="null"/> when nothing was measured on either side.
+    /// </summary>
+    public string? Currency { get; }
+
+    /// <param name="hub">The observed hub.</param>
+    /// <param name="origins">The origin city(ies).</param>
+    /// <param name="destination">The destination.</param>
+    /// <param name="originSide">The measures from the origin side.</param>
+    /// <param name="destinationSide">The measures from the destination side.</param>
+    /// <param name="probedAt">The date of the observation.</param>
+    /// <exception cref="ArgumentException">The two sides were measured in different currencies.</exception>
     public HubProfile(
         AirportCode hub,
         IReadOnlySet<CityCode> origins,
@@ -45,12 +58,36 @@ public sealed record HubProfile
             .Select(o => o.Value)
             .Distinct()
             .Order(StringComparer.Ordinal));
+
+        string[] currencies = [.. Floors(originSide, destinationSide).Select(floor => floor.Currency).Distinct()];
+        Currency = currencies.Length switch
+        {
+            0 => null,
+            1 => currencies[0],
+            _ => throw new ArgumentException(
+                $"A hub profile holds its floors in one pivot currency, found: {string.Join(", ", currencies)}.", nameof(originSide)),
+        };
     }
 
-    public IReadOnlyList<PartitionEstimate> Candidates()
+    private static IEnumerable<Money> Floors(LegProfile origin, LegProfile destination) =>
+        new[] { origin.OneWaysFloor, origin.RoundTripFloor, destination.OneWaysFloor, destination.RoundTripFloor }
+            .Where(floor => floor is not null)
+            .Select(floor => floor!.Value);
+
+    /// <summary>
+    /// The partitions this hub allows, cheapest estimated floor first.
+    /// </summary>
+    /// <param name="rates">The exchange rates used to leave the pivot currency.</param>
+    /// <param name="currency">The currency the floors are wanted in, normally the search currency.</param>
+    /// <returns>
+    /// One estimate per pair of pricing modes actually measured on both sides,
+    /// its floor expressed in <paramref name="currency"/>.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">No rate converts the pivot currency into <paramref name="currency"/>.</exception>
+    public IReadOnlyList<PartitionEstimate> Candidates(ExchangeRates rates, string currency)
     {
         LegPricing[] modes = [LegPricing.OneWays, LegPricing.RoundTrip];
-        List<PartitionEstimate>? candidates =
+        List<PartitionEstimate> candidates =
         [.. (
                 from origin in modes
                 from destination in modes
@@ -63,9 +100,10 @@ public sealed record HubProfile
                 let partition = new Partition(Hub, origin, destination)
                 let partitionPlan = new PartitionPlan(partition, AnchorFor(originFloor.Value, destinationFloor.Value))
 
+                // Summed in the pivot currency, converted once: two conversions would round twice.
                 select new PartitionEstimate(
                     partitionPlan,
-                    originFloor.Value + destinationFloor.Value
+                    rates.Convert(originFloor.Value + destinationFloor.Value, currency)
                 )
             )
             .OrderBy(e => e.Floor)

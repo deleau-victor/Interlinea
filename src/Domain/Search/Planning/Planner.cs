@@ -12,13 +12,30 @@ public sealed class Planner
     private readonly ConnectionPolicy _connections;
     private readonly ProbePolicy _probes;
     private readonly TimeSpan _hubProfileTtl;
+    private readonly ExchangeRates _rates;
+    private readonly string _pivotCurrency;
 
-    public Planner(AirportCatalog airports, ConnectionPolicy connections, ProbePolicy probes, TimeSpan hubProfileTtl)
+    /// <param name="airports">The airport catalog.</param>
+    /// <param name="connections">The self-transfer rules.</param>
+    /// <param name="probes">The thresholds deciding which pricing modes a side is probed in.</param>
+    /// <param name="hubProfileTtl">How long a hub profile stays usable.</param>
+    /// <param name="rates">The exchange rates, used to enter and leave the pivot currency.</param>
+    /// <param name="pivotCurrency">The ISO 4217 currency hub profiles are stored in.</param>
+    /// <exception cref="ArgumentException"><paramref name="pivotCurrency"/> is not an ISO 4217 code.</exception>
+    public Planner(
+        AirportCatalog airports,
+        ConnectionPolicy connections,
+        ProbePolicy probes,
+        TimeSpan hubProfileTtl,
+        ExchangeRates rates,
+        string pivotCurrency)
     {
         _airports = airports;
         _connections = connections;
         _probes = probes;
         _hubProfileTtl = hubProfileTtl;
+        _rates = rates;
+        _pivotCurrency = new Money(0m, pivotCurrency).Currency;
     }
 
     public static IReadOnlyList<TripSide> Sides { get; } =
@@ -68,7 +85,7 @@ public sealed class Planner
                 continue;
             }
 
-            foreach (PartitionEstimate estimate in profile.Candidates())
+            foreach (PartitionEstimate estimate in profile.Candidates(_rates, request.Currency))
             {
                 if (estimate.Floor >= bestKnownPrice)
                     pruned.Add(estimate);
@@ -111,7 +128,7 @@ public sealed class Planner
                 .Count();
             int days = legs.Window(side, TravelDirection.Outward).DayCount + legs.Window(side, TravelDirection.Return).DayCount;
 
-            return new LegProfile(oneWays, Cheapest(roundTrips), (double)distinctJourneys / days);
+            return new LegProfile(ToPivot(oneWays), ToPivot(Cheapest(roundTrips)), (double)distinctJourneys / days);
         }
 
         return new HubProfile(hub, legs.OriginCityCodes, request.Destination, Measure(TripSide.Origin), Measure(TripSide.Destination), request.RequestedAt);
@@ -384,6 +401,8 @@ public sealed class Planner
         bound.LegPrecedes ? query with { ReturnArriveBefore = bound.Time } : query with { ReturnDepartAfter = bound.Time };
 
     private static Money? Cheapest(IEnumerable<Ticket> tickets) => tickets.Min(t => (Money?)t.Price);
+
+    private Money? ToPivot(Money? amount) => amount is { } measured ? _rates.Convert(measured, _pivotCurrency) : null;
 
     private static TimeOnly? Earliest(IEnumerable<TimeOnly?> times)
     {
