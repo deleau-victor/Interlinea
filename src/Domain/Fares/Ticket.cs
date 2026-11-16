@@ -23,7 +23,7 @@ public sealed record Ticket(
     /// <summary>
     /// The validated journeys of the ticket
     /// </summary>
-    public IReadOnlyList<Journey> Journeys { get; } = Validate(Journeys);
+    public IReadOnlyList<Journey> Journeys { get; } = JourneyPair.Validate(Journeys, nameof(Journeys));
 
     /// <summary>
     /// The booking Uri for this ticket
@@ -75,15 +75,4 @@ public sealed record Ticket(
     /// <param name="ttl"></param>
     /// <returns></returns>
     public bool IsFresh(DateTimeOffset now, TimeSpan ttl) => now - ObservedAt <= ttl;
-
-    private static Journey[] Validate(IReadOnlyList<Journey> journeys)
-    {
-        if (journeys.Count is not (1 or 2))
-            throw new ArgumentException("A ticket can only cover a one-way, or a round trip", nameof(journeys));
-
-        if (journeys.Count == 2 && journeys[1].DepartureAt <= journeys[0].ArrivalAt)
-            throw new ArgumentException("The return must leave after the arrival of the outward journey.", nameof(journeys));
-
-        return [.. journeys];
-    }
 }

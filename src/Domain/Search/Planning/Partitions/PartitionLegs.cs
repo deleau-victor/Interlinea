@@ -121,9 +121,16 @@ internal sealed class PartitionLegs
     /// <param name="side">The side of the trip.</param>
     /// <returns><see langword="true"/> if the ticket is a matching round trip; otherwise, <see langword="false"/>.</returns>
     public bool IsRoundTripOn(Ticket ticket, TripSide side) =>
-        ticket.ReturnJourney is { } back
-        && Fits(ticket.FirstJourney, side, TravelDirection.Outward)
-        && Fits(back, side, TravelDirection.Return);
+        IsRoundTrip(ticket.FirstJourney, ticket.ReturnJourney, side);
+
+    /// <summary>
+    /// Determines whether the sighted price is a round trip covering a side of the trip in both directions.
+    /// </summary>
+    /// <param name="sighting">The sighted price to check.</param>
+    /// <param name="side">The side of the trip.</param>
+    /// <returns><see langword="true"/> if the sighting is a matching round trip; otherwise, <see langword="false"/>.</returns>
+    public bool IsRoundTripOn(PriceSighting sighting, TripSide side) =>
+        IsRoundTrip(sighting.FirstJourney, sighting.ReturnJourney, side);
 
     /// <summary>
     /// Determines whether the ticket is a one-way covering a side of the trip in a given direction.
@@ -133,8 +140,28 @@ internal sealed class PartitionLegs
     /// <param name="direction">The direction of the trip.</param>
     /// <returns><see langword="true"/> if the ticket is a matching one-way; otherwise, <see langword="false"/>.</returns>
     public bool IsOneWayOn(Ticket ticket, TripSide side, TravelDirection direction) =>
-        ticket.ReturnJourney is null
-        && Fits(ticket.FirstJourney, side, direction);
+        IsOneWay(ticket.FirstJourney, ticket.ReturnJourney, side, direction);
+
+    /// <summary>
+    /// Determines whether the sighted price is a one-way covering a side of the trip in a given direction.
+    /// </summary>
+    /// <param name="sighting">The sighted price to check.</param>
+    /// <param name="side">The side of the trip.</param>
+    /// <param name="direction">The direction of the trip.</param>
+    /// <returns><see langword="true"/> if the sighting is a matching one-way; otherwise, <see langword="false"/>.</returns>
+    public bool IsOneWayOn(PriceSighting sighting, TripSide side, TravelDirection direction) =>
+        IsOneWay(sighting.FirstJourney, sighting.ReturnJourney, side, direction);
+
+    // A ticket and a sighted price are unrelated types on purpose, but they are read the same
+    // way here: an outbound journey, and a return one when there is one.
+    private bool IsRoundTrip(Journey outward, Journey? back, TripSide side) =>
+        back is not null
+        && Fits(outward, side, TravelDirection.Outward)
+        && Fits(back, side, TravelDirection.Return);
+
+    private bool IsOneWay(Journey outward, Journey? back, TripSide side, TravelDirection direction) =>
+        back is null
+        && Fits(outward, side, direction);
 
     // The hub matches by city (e.g. ORY for a CDG hub), whereas origins and destination
     // must match the exact airport codes requested by the user.

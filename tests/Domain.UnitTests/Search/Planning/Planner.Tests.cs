@@ -37,14 +37,20 @@ public sealed class PlannerTests
     /// What the cheap sweep brings back on both sides of MAD, in the search currency:
     /// two one-ways on the feeder, one round trip on the long haul.
     /// </summary>
-    private static Ticket[] MadridProbes(string currency) =>
+    private static PriceSighting[] MadridProbes(string currency) =>
     [
-        Flights.Ticket(110m, currency, Flights.Journey("CDG", "MAD", new DateTimeOffset(2026, 12, 1, 8, 0, 0, TimeSpan.Zero), duration: 2)),
-        Flights.Ticket(100m, currency, Flights.Journey("MAD", "CDG", new DateTimeOffset(2026, 12, 20, 18, 0, 0, TimeSpan.Zero), duration: 2)),
-        Flights.Ticket(660m, currency,
-            Flights.Journey("MAD", "LIM", new DateTimeOffset(2026, 12, 1, 12, 0, 0, TimeSpan.Zero)),
-            Flights.Journey("LIM", "MAD", new DateTimeOffset(2026, 12, 20, 2, 0, 0, TimeSpan.Zero))),
+        Sighting(110m, currency, Flights.Journey("CDG", "MAD", Day(1, 8), duration: 2)),
+        Sighting(100m, currency, Flights.Journey("MAD", "CDG", Day(20, 18), duration: 2)),
+        Sighting(660m, currency,
+            Flights.Journey("MAD", "LIM", Day(1, 12)),
+            Flights.Journey("LIM", "MAD", Day(20, 2))),
     ];
+
+    private static PriceSighting Sighting(decimal price, string currency, params Journey[] journeys) =>
+        new(journeys, new Money(price, currency));
+
+    private static DateTimeOffset Day(int day, int hour) =>
+        new(2026, 12, day, hour, 0, 0, TimeSpan.Zero);
 
     // —————————————————————— PIVOT CURRENCY TESTS ——————————————————————
 
@@ -83,5 +89,39 @@ public sealed class PlannerTests
         profile.Currency.Should().Be(Pivot);
         profile.Candidates(Rates, Pivot).Should().ContainSingle()
                .Which.Floor.Should().Be(new Money(790.91m, Pivot));
+    }
+
+    // —————————————————————— ONE-WAYS AND ROUND TRIPS TESTS ——————————————————————
+
+    [Fact]
+    public void Profile_WithARoundTripOnASideAlsoProbedAsOneWays_DoesNotCountItAmongTheOneWays()
+    {
+        // Arrange
+        // A side whose distance falls between the two probe thresholds is swept in BOTH modes, so the sweep brings back one-ways and round trips on the same side.
+        // On a long haul the round trip is the cheaper of the two: counted among the one-ways it would become their floor, and the two modes would stop being distinguishable.
+        PriceSighting[] probes =
+        [
+            // Origin side, one-ways only: 110 + 100 = 210.
+            Sighting(110m, Pivot, Flights.Journey("CDG", "MAD", Day(1, 8), duration: 2)),
+            Sighting(100m, Pivot, Flights.Journey("MAD", "CDG", Day(20, 18), duration: 2)),
+
+            // Destination side as two one-ways: 700 + 100 = 800.
+            Sighting(700m, Pivot, Flights.Journey("MAD", "LIM", Day(1, 12))),
+            Sighting(100m, Pivot, Flights.Journey("LIM", "MAD", Day(20, 2))),
+
+            // The same destination side as one round trip, on other flights: 620, cheaper.
+            Sighting(620m, Pivot,
+                Flights.Journey("MAD", "LIM", Day(1, 14)),
+                Flights.Journey("LIM", "MAD", Day(20, 4))),
+        ];
+
+        // Act
+        HubProfile profile = NewPlanner().Profile(Request(Pivot, "CDG"), new AirportCode("MAD"), probes);
+
+        // Assert
+        // 210 + 620 for the round trip, 210 + 800 for the pair of one-ways.
+        // Were the round trip read as a one-way, the one-ways floor would be 720, not 800.
+        profile.Candidates(Rates, Pivot).Select(candidate => candidate.Floor)
+               .Should().Equal([new Money(830m, Pivot), new Money(1010m, Pivot)]);
     }
 }

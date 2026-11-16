@@ -74,7 +74,7 @@ public sealed class Planner
             .GroupBy(p => p.Hub)
             .ToDictionary(g => g.Key, g => g.MaxBy(p => p.ProbedAt)!);
 
-        var (retained, toProbe, pruned) = (new List<PartitionEstimate>(), new List<AirportCode>(), new List<PartitionEstimate>());
+        (List<PartitionEstimate>? retained, List<AirportCode>? toProbe, List<PartitionEstimate>? pruned) = (new List<PartitionEstimate>(), new List<AirportCode>(), new List<PartitionEstimate>());
 
         foreach (AirportCode hub in potentialHubs.Distinct())
         {
@@ -98,32 +98,32 @@ public sealed class Planner
     }
 
     /// <summary>
-    /// Build a Hub profile from the observed tickets from <see cref="ProbeQueries"/> fro each sides :
+    /// Build a Hub profile from the prices sighted by <see cref="ProbeQueries"/> for each side :
     /// - The cheapest RT
     /// - The cheapest pair of OW
     /// - And the number of distinct flight each day
     /// </summary>
     /// <param name="request">The user request</param>
     /// <param name="hub">The airport from we are building the profile</param>
-    /// <param name="probeResults">The observed tickets</param>
+    /// <param name="probeResults">The prices sighted while probing. Sightings, not tickets: a probe reads listed prices and only serves to measure a floor</param>
     /// <returns>The profile of the hub</returns>
-    public HubProfile Profile(SearchRequest request, AirportCode hub, IEnumerable<Ticket> probeResults)
+    public HubProfile Profile(SearchRequest request, AirportCode hub, IEnumerable<PriceSighting> probeResults)
     {
         var legs = new PartitionLegs(_airports, request, new Partition(hub, LegPricing.OneWays, LegPricing.OneWays));
-        var tickets = probeResults.ToList();
+        var sightings = probeResults.ToList();
 
         LegProfile Measure(TripSide side)
         {
-            var outwardOneWays = tickets.Where(t => legs.IsOneWayOn(t, side, TravelDirection.Outward)).ToList();
-            var returnOneWays = tickets.Where(t => legs.IsOneWayOn(t, side, TravelDirection.Return)).ToList();
-            var roundTrips = tickets.Where(t => legs.IsRoundTripOn(t, side)).ToList();
+            var outwardOneWays = sightings.Where(s => legs.IsOneWayOn(s, side, TravelDirection.Outward)).ToList();
+            var returnOneWays = sightings.Where(s => legs.IsOneWayOn(s, side, TravelDirection.Return)).ToList();
+            var roundTrips = sightings.Where(s => legs.IsRoundTripOn(s, side)).ToList();
 
             Money? oneWays = Cheapest(outwardOneWays) is { } outward && Cheapest(returnOneWays) is { } back
                 ? outward + back
                 : null;
 
             int distinctJourneys = outwardOneWays.Concat(returnOneWays).Concat(roundTrips)
-                .SelectMany(t => t.Journeys)
+                .SelectMany(s => s.Journeys)
                 .DistinctBy(j => j.Key)
                 .Count();
             int days = legs.Window(side, TravelDirection.Outward).DayCount + legs.Window(side, TravelDirection.Return).DayCount;
@@ -197,16 +197,16 @@ public sealed class Planner
     public IReadOnlyList<PriceQuery> PositioningQueries(SearchRequest request, PartitionPlan plan, IEnumerable<Ticket> fetched, Money? bestKnownPrice)
     {
         PartitionLegs legs = new(_airports, request, plan.Partition);
-        var anchors = AnchorsOf(legs, plan, fetched, bestKnownPrice);
+        AnchorSet anchors = AnchorsOf(legs, plan, fetched, bestKnownPrice);
         TripSide other = plan.OtherSide;
         var queries = new List<PriceQuery>();
 
         if (plan.Partition.PricingOf(other) == LegPricing.OneWays)
         {
             foreach (TravelDirection direction in PartitionLegs.Directions)
-                foreach (var anchor in anchors.In(direction))
+                foreach (Journey anchor in anchors.In(direction))
                 {
-                    var bound = BoundOf(anchor, Partition.ComesFirst(other, direction), request.Baggage);
+                    Bound bound = BoundOf(anchor, Partition.ComesFirst(other, direction), request.Baggage);
                     if (!legs.Window(other, direction).Contains(bound.Date))
                         continue;
 
@@ -216,10 +216,10 @@ public sealed class Planner
         }
         else
         {
-            foreach (var (outward, back) in anchors.Pairs)
+            foreach ((Journey? outward, Journey? back) in anchors.Pairs)
             {
-                var outBound = BoundOf(outward, Partition.ComesFirst(other, TravelDirection.Outward), request.Baggage);
-                var backBound = BoundOf(back, Partition.ComesFirst(other, TravelDirection.Return), request.Baggage);
+                Bound outBound = BoundOf(outward, Partition.ComesFirst(other, TravelDirection.Outward), request.Baggage);
+                Bound backBound = BoundOf(back, Partition.ComesFirst(other, TravelDirection.Return), request.Baggage);
                 if (!legs.Window(other, TravelDirection.Outward).Contains(outBound.Date)
                     || !legs.Window(other, TravelDirection.Return).Contains(backBound.Date))
                     continue;
@@ -248,16 +248,16 @@ public sealed class Planner
     {
         List<Ticket> tickets = [.. fetched];
         PartitionLegs legs = new(_airports, request, plan.Partition);
-        var anchors = AnchorsOf(legs, plan, tickets, bestKnownPrice);
+        AnchorSet anchors = AnchorsOf(legs, plan, tickets, bestKnownPrice);
         TripSide other = plan.OtherSide;
         var queries = new List<PriceQuery>();
 
         if (plan.Partition.PricingOf(other) == LegPricing.OneWays)
         {
             foreach (TravelDirection direction in PartitionLegs.Directions)
-                foreach (var anchor in anchors.In(direction))
+                foreach (Journey anchor in anchors.In(direction))
                 {
-                    var bound = BoundOf(anchor, Partition.ComesFirst(other, direction), request.Baggage);
+                    Bound bound = BoundOf(anchor, Partition.ComesFirst(other, direction), request.Baggage);
                     bool connected = tickets
                         .Where(t => legs.IsOneWayOn(t, other, direction))
                         .Any(t => Connects(t.FirstJourney, anchor, bound, request.Baggage));
@@ -271,10 +271,10 @@ public sealed class Planner
         else
         {
             var candidates = tickets.Where(t => legs.IsRoundTripOn(t, other)).ToList();
-            foreach (var (outward, back) in anchors.Pairs)
+            foreach ((Journey? outward, Journey? back) in anchors.Pairs)
             {
-                var outBound = BoundOf(outward, Partition.ComesFirst(other, TravelDirection.Outward), request.Baggage);
-                var backBound = BoundOf(back, Partition.ComesFirst(other, TravelDirection.Return), request.Baggage);
+                Bound outBound = BoundOf(outward, Partition.ComesFirst(other, TravelDirection.Outward), request.Baggage);
+                Bound backBound = BoundOf(back, Partition.ComesFirst(other, TravelDirection.Return), request.Baggage);
                 bool OutwardOk(Ticket t) => Connects(t.FirstJourney, outward, outBound, request.Baggage);
                 bool ReturnOk(Ticket t) => Connects(t.ReturnJourney!, back, backBound, request.Baggage);
 
@@ -285,15 +285,15 @@ public sealed class Planner
                 if (outwardOk && returnOk)
                     continue;
 
-                var outDate = outwardOk ? outBound.Date : outBound.AdjacentDate;
-                var backDate = returnOk ? backBound.Date : backBound.AdjacentDate;
+                DateOnly outDate = outwardOk ? outBound.Date : outBound.AdjacentDate;
+                DateOnly backDate = returnOk ? backBound.Date : backBound.AdjacentDate;
                 if (!legs.Window(other, TravelDirection.Outward).Contains(outDate)
                     || !legs.Window(other, TravelDirection.Return).Contains(backDate))
                     continue;
 
                 queries.AddRange(legs.Routes(other, TravelDirection.Outward, outBound.HubAirport).Select(route =>
                 {
-                    var query = RoundTrip(route, outDate, backDate, request.Baggage);
+                    PriceQuery query = RoundTrip(route, outDate, backDate, request.Baggage);
                     if (outwardOk)
                         query = WithOutwardBound(query, outBound);
                     if (returnOk)
@@ -400,8 +400,9 @@ public sealed class Planner
     private static PriceQuery WithReturnBound(PriceQuery query, Bound bound) =>
         bound.LegPrecedes ? query with { ReturnArriveBefore = bound.Time } : query with { ReturnDepartAfter = bound.Time };
 
-    private static Money? Cheapest(IEnumerable<Ticket> tickets) => tickets.Min(t => (Money?)t.Price);
+    private static Money? Cheapest(IEnumerable<PriceSighting> sightings) => sightings.Min(s => (Money?)s.Price);
 
+    /// <summary>The same amount in the pivot currency hub profiles are stored in.</summary>
     private Money? ToPivot(Money? amount) => amount is { } measured ? _rates.Convert(measured, _pivotCurrency) : null;
 
     private static TimeOnly? Earliest(IEnumerable<TimeOnly?> times)
