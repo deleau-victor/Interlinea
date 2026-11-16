@@ -52,6 +52,15 @@ public sealed class PlannerTests
     private static DateTimeOffset Day(int day, int hour) =>
         new(2026, 12, day, hour, 0, 0, TimeSpan.Zero);
 
+    private static SearchRequest RequestTo(string destination, params string[] origins) => new(
+        origins.Select(origin => new AirportCode(origin)).ToHashSet(),
+        new AirportCode(destination),
+        new DateRange(new DateOnly(2026, 12, 1), new DateOnly(2026, 12, 3)),
+        new DateRange(new DateOnly(2026, 12, 20), new DateOnly(2026, 12, 22)),
+        BaggageOption.CabinOnly,
+        Pivot,
+        Now);
+
     // —————————————————————— PIVOT CURRENCY TESTS ——————————————————————
 
     [Fact]
@@ -123,5 +132,54 @@ public sealed class PlannerTests
         // Were the round trip read as a one-way, the one-ways floor would be 720, not 800.
         profile.Candidates(Rates, Pivot).Select(candidate => candidate.Floor)
                .Should().Equal([new Money(830m, Pivot), new Money(1010m, Pivot)]);
+    }
+
+    // —————————————————————— ORIGIN CITY KEY TESTS ——————————————————————
+
+    [Fact]
+    public void SelectPartitions_WithAProfileProbedFromOneAirportOfACity_ServesASearchOnTheWholeCity()
+    {
+        // Arrange & Act — the profile was probed for PAR; the search accepts CDG and ORY,
+        // which are both Paris, so the cached profile matches and nothing is re-probed.
+        PartitionSelection selection = NewPlanner().SelectPartitions(
+            Request(Pivot, "CDG", "ORY"), [new AirportCode("MAD")], [MadridProfile()], new Money(1100m, Pivot));
+
+        // Assert
+        selection.Retained.Should().ContainSingle();
+        selection.ToProbe.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SelectPartitions_WithAProfileProbedFromAnotherCity_AsksToProbeTheHubAgain()
+    {
+        // Arrange — a profile probed from Madrid itself, read by a search leaving from Paris.
+        HubProfile fromMadrid = new(
+            new AirportCode("MAD"), new HashSet<CityCode> { new("MAD") }, new AirportCode("LIM"),
+            new LegProfile(new Money(210m, Pivot), null, FlightsPerDay: 4.0),
+            new LegProfile(null, new Money(620m, Pivot), FlightsPerDay: 1.0),
+            Yesterday);
+
+        // Act
+        PartitionSelection selection = NewPlanner().SelectPartitions(
+            Request(Pivot, "CDG"), [new AirportCode("MAD")], [fromMadrid], new Money(1100m, Pivot));
+
+        // Assert
+        selection.Retained.Should().BeEmpty();
+        selection.ToProbe.Should().Equal([new AirportCode("MAD")]);
+    }
+
+    [Fact]
+    public void SelectPartitions_WithADestinationMissingFromTheAirportCatalog_DoesNotNeedIt()
+    {
+        // Arrange — the origin city key is computed from the ORIGINS alone. Obtaining it by
+        // building a partition hubbed on the destination made this call depend on a destination
+        // the catalog may not know.
+        SearchRequest request = RequestTo("BOG", "CDG");
+
+        // Act
+        Func<PartitionSelection> selection = () => NewPlanner().SelectPartitions(request, [], [], null);
+
+        // Assert
+        selection.Should().NotThrow();
     }
 }

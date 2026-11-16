@@ -65,7 +65,7 @@ public sealed class Planner
         IEnumerable<HubProfile> cachedProfiles,
         Money? bestKnownPrice)
     {
-        string originCities = new PartitionLegs(_airports, request, new Partition(request.Destination, LegPricing.OneWays, LegPricing.OneWays)).OriginCities;
+        string originCities = OriginCityKey.Of(_airports, request.Origins);
         var fresh = cachedProfiles
             .Where(p =>
                 p.Destination == request.Destination

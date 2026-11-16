@@ -54,10 +54,7 @@ public sealed record HubProfile
         _destinationSide = destinationSide;
         ProbedAt = probedAt;
 
-        OriginCities = string.Join(",", origins
-            .Select(o => o.Value)
-            .Distinct()
-            .Order(StringComparer.Ordinal));
+        OriginCities = OriginCityKey.Of(origins);
 
         string[] currencies = [.. Floors(originSide, destinationSide).Select(floor => floor.Currency).Distinct()];
         Currency = currencies.Length switch

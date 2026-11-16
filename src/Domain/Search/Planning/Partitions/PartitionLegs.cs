@@ -27,13 +27,8 @@ internal sealed class PartitionLegs
 
         _origins = [.. request.Origins.OrderBy(o => o.Value, StringComparer.Ordinal)];
         _hubCity = airports.Get(partition.Hub).CityCode;
-        OriginCityCodes = request.Origins
-            .Select(o => airports.Get(o).CityCode)
-            .ToFrozenSet();
-        OriginCities = string.Join(",", OriginCityCodes
-            .Select(cityCode => cityCode.Value)
-            .Distinct()
-            .Order(StringComparer.Ordinal));
+        OriginCityCodes = OriginCityKey.Cities(airports, request.Origins);
+        OriginCities = OriginCityKey.Of(OriginCityCodes);
     }
 
     /// <summary>
