@@ -18,14 +18,24 @@ public sealed class PlannerTests
     private static (Route Leg, TripType Type)[] Probed(IEnumerable<PriceQuery> queries) =>
         [.. queries.Select(query => (query.Route, query.TripType))];
 
+    /// <summary>
+    /// Leaving between the 1st and the 3rd of December for 19 nights, every weekday accepted:
+    /// three candidates, coming back on the 20th, the 21st and the 22nd. The envelopes are the
+    /// same as the two date ranges this request used to carry, but it now asks for three trips
+    /// where the two ranges admitted nine.
+    /// </summary>
     private static SearchRequest Request(string currency, params string[] origins) => new(
-        origins.Select(origin => new AirportCode(origin)).ToHashSet(),
+        origins.Select(origin => new AirportCode(origin)),
         new AirportCode("LIM"),
         new DateRange(new DateOnly(2026, 12, 1), new DateOnly(2026, 12, 3)),
-        new DateRange(new DateOnly(2026, 12, 20), new DateOnly(2026, 12, 22)),
+        [19],
+        AllDays,
+        AllDays,
         BaggageOption.CabinOnly,
         currency,
         Now);
+
+    private static DayOfWeek[] AllDays => Enum.GetValues<DayOfWeek>();
 
     /// <summary>A profile for MAD held in the pivot currency: 210 of one-ways, then a 620 round trip.</summary>
     private static HubProfile MadridProfile() => new(
@@ -56,10 +66,12 @@ public sealed class PlannerTests
         new(2026, 12, day, hour, 0, 0, TimeSpan.Zero);
 
     private static SearchRequest RequestTo(string destination, params string[] origins) => new(
-        origins.Select(origin => new AirportCode(origin)).ToHashSet(),
+        origins.Select(origin => new AirportCode(origin)),
         new AirportCode(destination),
         new DateRange(new DateOnly(2026, 12, 1), new DateOnly(2026, 12, 3)),
-        new DateRange(new DateOnly(2026, 12, 20), new DateOnly(2026, 12, 22)),
+        [19],
+        AllDays,
+        AllDays,
         BaggageOption.CabinOnly,
         Pivot,
         Now);
