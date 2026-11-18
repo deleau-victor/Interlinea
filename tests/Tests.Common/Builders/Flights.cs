@@ -10,6 +10,7 @@ namespace Tests.Common.Builders;
 /// </summary>
 public static class Flights
 {
+    public static readonly DateTimeOffset ObservedAt = new(2026, 11, 17, 12, 0, 0, TimeSpan.Zero);
     public static readonly DateTimeOffset Outbound = new(2026, 12, 1, 10, 0, 0, TimeSpan.Zero);
     public static readonly DateTimeOffset Inbound = new(2026, 12, 20, 10, 0, 0, TimeSpan.Zero);
 
@@ -43,5 +44,5 @@ public static class Flights
 
     public static Ticket Ticket(decimal price, string currency, params Journey[] journeys) =>
         new(Guid.NewGuid(), journeys, new Money(price, currency),
-            new Seller("Air France", SellerKind.Carrier), CheckedBagIncluded: false, DateTimeOffset.UtcNow);
+            new Seller("Air France", SellerKind.Carrier), CheckedBagIncluded: false, ObservedAt);
 }
