@@ -20,6 +20,10 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
+  <ItemGroup>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(IsTestProject)' == 'true'">
     <Using Include="Xunit" />
 

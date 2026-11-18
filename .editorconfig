@@ -568,3 +568,4 @@ dotnet_diagnostic.CA2263.severity = warning
 dotnet_diagnostic.CA2264.severity = warning
 dotnet_diagnostic.CA2265.severity = warning
 
+dotnet_diagnostic.RS0030.severity = error

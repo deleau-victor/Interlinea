@@ -447,3 +447,4 @@ src/Web/node_modules/
 
 # Raw RabbitMQ secret files — ne jamais commiter, utiliser kubeseal
 k8s/**/rabbitmq-secret.yaml
+.claude/settings.local.json

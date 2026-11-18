@@ -1,0 +1,70 @@
+{
+    "permissions": {
+        "deny": [
+            "Edit(Directory.Build.props)",
+            "Edit(Directory.Packages.props)",
+            "Edit(global.json)",
+            "Edit(.editorconfig)",
+            "Edit(BannedSymbols.txt)",
+            "Edit(./.claude/**)",
+            "Edit(./.github/**)",
+            "Edit(./docs/adr/**)",
+            "Edit(./tests/Architecture.UnitTests/**)",
+            "Edit(**/Migrations/**)",
+            "Read(.env)",
+            "Bash(git push*)",
+            "Bash(git commit*)",
+            "Bash(dotnet ef database update*)"
+        ],
+        "ask": [
+            "Edit(**/*.csproj)",
+            "Edit(./Interlinea.slnx)",
+            "Bash(dotnet add*)",
+            "Bash(dotnet new*)",
+            "Bash(dotnet ef migrations*)"
+        ],
+        "allow": [
+            "Bash(dotnet build*)",
+            "Bash(dotnet test*)",
+            "Bash(dotnet format*)",
+            "Bash(git status*)",
+            "Bash(git diff*)",
+            "Bash(git log*)"
+        ]
+    },
+    "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "Edit|Write|Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard.sh"
+                    }
+                ]
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "Edit|Write",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format.sh"
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify.sh",
+                        "timeout": 300
+                    }
+                ]
+            }
+        ]
+    }
+}

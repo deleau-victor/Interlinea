@@ -1,0 +1,21 @@
+// Time : always by TimeProvider (FakeTimeProvider in tests)
+P:System.DateTime.Now;Domain: take the instant as a parameter. Api: TimeProvider.GetLocalNow(). Tests: FakeTimeProvider
+P:System.DateTime.UtcNow;Domain: take the instant as a parameter. Api: TimeProvider.GetUtcNow(). Tests: FakeTimeProvider
+P:System.DateTime.Today;Domain: take the instant as a parameter. Api: TimeProvider.GetLocalNow(). Tests: FakeTimeProvider
+P:System.DateTimeOffset.Now;Domain: take the instant as a parameter. Api: TimeProvider.GetLocalNow(). Tests: FakeTimeProvider
+P:System.DateTimeOffset.UtcNow;Domain: take the instant as a parameter. Api: TimeProvider.GetUtcNow(). Tests: FakeTimeProvider
+
+// Synchronous lock on asynchronous data
+P:System.Threading.Tasks.Task`1.Result;Use await
+M:System.Threading.Tasks.Task.Wait;Use await
+M:System.Threading.Tasks.Task.Wait(System.Int32);Use await
+M:System.Threading.Tasks.Task.Wait(System.TimeSpan);Use await
+M:System.Threading.Tasks.Task.Wait(System.Threading.CancellationToken);Use await
+M:System.Threading.Thread.Sleep(System.Int32);Use await Task.Delay(..., timeProvider)
+M:System.Threading.Thread.Sleep(System.TimeSpan);Use await Task.Delay(..., timeProvider)
+
+// HTTP
+M:System.Net.Http.HttpClient.#ctor;Use IHttpClientFactory or a typed client
+
+// Output
+T:System.Console;Use ILogger
