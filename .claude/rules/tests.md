@@ -10,7 +10,7 @@ paths:
 - Arrange / Act / Assert, one behavior per test.
 - Do not mock the domain. Test doubles only for ports.
 - Async: pass TestContext.Current.CancellationToken.
-- _.UnitTests: no network, no disk, no database. Otherwise it is an _.IntegrationTests.
+- `UnitTests`: no network, no disk, no database. Otherwise it is an `IntegrationTests`.
 - A test must be able to fail: check the red before the green.
 - Before writing an assertion, name the production change that would make it fail. If
   the answer only cites operators present in the assertion, it is a tautology:
