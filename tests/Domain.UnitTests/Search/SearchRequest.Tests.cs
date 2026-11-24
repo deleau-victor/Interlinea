@@ -161,6 +161,44 @@ public sealed class SearchRequestTests
         request.ReturnDates.Should().Be(new DateRange(new DateOnly(2026, 12, 20), new DateOnly(2026, 12, 23)));
     }
 
+    // —————————————————————— ADMITS TESTS ——————————————————————
+
+    private static DateOnly December(int day) => new(2026, 12, day);
+
+    [Fact]
+    public void Admits_ACandidate_IsTrue()
+    {
+        // Arrange & Act & Assert
+        Request().Admits(new AirportCode("CDG"), December(3), December(22)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Admits_TheSameDepartureWithAStayLengthNotRequested_IsFalse()
+    {
+        // Arrange & Act & Assert — the 3rd and the 20th both sit inside their envelopes
+        // (1st-3rd, 20th-22nd), but seventeen nights were never asked for.
+        Request().Admits(new AirportCode("CDG"), December(3), December(20)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Admits_AReturnOnARefusedWeekday_IsFalse()
+    {
+        // Arrange — twenty nights from the 2nd is the 22nd, a TUESDAY, and only Monday and
+        // Wednesday are accepted. The stay length is accepted and both dates sit inside their
+        // envelopes: only the weekday refuses it.
+        SearchRequest request = Request(nights: [19, 20], returnDays: [DayOfWeek.Monday, DayOfWeek.Wednesday]);
+
+        // Act & Assert
+        request.Admits(new AirportCode("CDG"), December(2), December(22)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Admits_AnOriginNotRequested_IsFalse()
+    {
+        // Arrange & Act & Assert — the same dates as an admitted candidate, from Orly.
+        Request().Admits(new AirportCode("ORY"), December(3), December(22)).Should().BeFalse();
+    }
+
     // —————————————————————— VALIDATION TESTS ——————————————————————
 
     [Fact]

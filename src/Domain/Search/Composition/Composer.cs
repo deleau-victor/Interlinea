@@ -58,9 +58,7 @@ public sealed class Composer(AirportCatalog airports, ConnectionPolicy connectio
         offered
             .Where(o => o.Selected.ReturnJourney is { } back
                 && request.Origins.Contains(o.Selected.FirstJourney.Origin) && o.Selected.FirstJourney.Destination == request.Destination
-                && back.Origin == request.Destination && request.Origins.Contains(back.Destination)
-                && request.OutboundDates.Contains(o.Selected.FirstJourney.DepartureDate)
-                && request.ReturnDates.Contains(back.DepartureDate))
+                && back.Origin == request.Destination)
             .Select(o => Build(request, [o], [o.Selected.FirstJourney], [o.Selected.ReturnJourney!], via: null))
             .OfType<Offer>();
 
@@ -145,8 +143,34 @@ public sealed class Composer(AirportCatalog airports, ConnectionPolicy connectio
         return connectionPolicy.AllowsSelfTransfer(first.Destination, first.ArrivalAt, second.Origin, second.DepartureAt, baggage);
     }
 
+    /// <summary>
+    /// The one gate every offer goes through, whichever way it was composed: a trip the request
+    /// did not ask for is never offered.
+    /// </summary>
     private Offer? Build(SearchRequest request, OfferedTicket[] tickets, Journey[] outbound, Journey[] inbound, Partition? via) =>
-        inbound[0].DepartureAt <= outbound[^1].ArrivalAt ? null : Assess(request, new Offer(tickets, outbound, inbound, via));
+        inbound[0].DepartureAt <= outbound[^1].ArrivalAt || !IsRequested(request, outbound, inbound)
+            ? null
+            : Assess(request, new Offer(tickets, outbound, inbound, via));
+
+    /// <summary>
+    /// The trip leaves an accepted origin on a requested date pair, and comes back to the city
+    /// it left from: Roissy then Orly is a trip to Paris and back, Roissy then Montreal is not,
+    /// even when Montreal is an accepted origin.
+    /// </summary>
+    /// <remarks>
+    /// The return date is the day the return leaves the destination, not the day it lands.
+    /// </remarks>
+    private bool IsRequested(SearchRequest request, Journey[] outbound, Journey[] inbound) =>
+        request.Admits(outbound[0].Origin, outbound[0].DepartureDate, inbound[0].DepartureDate)
+        && SameCity(outbound[0].Origin, inbound[^1].Destination);
+
+    /// <summary>
+    /// <see cref="AirportCatalog.SameCity"/> without the exception: an airport missing from the
+    /// catalog costs the offer, not the whole composition.
+    /// </summary>
+    private bool SameCity(AirportCode left, AirportCode right) =>
+        left == right
+        || (airports.TryGet(left, out Airport? a) && airports.TryGet(right, out Airport? b) && a.CityCode == b.CityCode);
 
     /// <summary>
     /// Calculate the total cost of the package beyond the tickets and list what needs to be noted.

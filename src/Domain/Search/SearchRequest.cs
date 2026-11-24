@@ -68,6 +68,8 @@ public sealed record SearchRequest
     /// <summary>The envelope of the candidate return dates.</summary>
     public DateRange ReturnDates { get; }
 
+    private readonly FrozenSet<(AirportCode Origin, DateOnly Departure, DateOnly? Return)> _admitted;
+
     /// <param name="origins">The accepted departure airports.</param>
     /// <param name="destination">The arrival airport.</param>
     /// <param name="departureWindow">The dates on which the outbound journey may leave.</param>
@@ -127,9 +129,31 @@ public sealed record SearchRequest
                 + "or every return the accepted stay lengths imply.",
                 nameof(departureWindow));
 
+        _admitted = Candidates
+            .Select(candidate => (candidate.Origin, candidate.Departure, candidate.Return))
+            .ToFrozenSet();
         OutboundDates = Envelope(Candidates.Select(candidate => candidate.Departure));
         ReturnDates = Envelope(Candidates.Select(candidate => candidate.Return!.Value));
     }
+
+    /// <summary>
+    /// Whether this request asks for the trip leaving <paramref name="origin"/> on
+    /// <paramref name="departure"/> and coming back on <paramref name="back"/>, that is whether
+    /// that trip is one of the <see cref="Candidates"/>.
+    /// </summary>
+    /// <remarks>
+    /// Never answer this from the envelopes: with nineteen nights and a departure between the
+    /// 1st and the 3rd, leaving on the 3rd and coming back on the 20th sits inside both of them
+    /// and is seventeen nights nobody asked for. A predicate, so it never throws, whatever the
+    /// trip it is given.
+    /// </remarks>
+    /// <param name="origin">The airport the outbound journey leaves from.</param>
+    /// <param name="departure">The date the outbound journey leaves on.</param>
+    /// <param name="back">
+    /// The date the return journey leaves the destination on, or <see langword="null"/> for a one-way.
+    /// </param>
+    public bool Admits(AirportCode origin, DateOnly departure, DateOnly? back) =>
+        _admitted.Contains((origin, departure, back));
 
     /// <summary>
     /// The candidates, in the one order the contract fixes. The origins are sorted ordinally
